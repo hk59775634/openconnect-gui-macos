@@ -1,0 +1,160 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:SslVpnClient.ViewModels"
+             xmlns:conv="using:SslVpnClient.Mac.Converters"
+             x:Class="SslVpnClient.Mac.Views.ControlView"
+             x:DataType="vm:VpnControlViewModel">
+
+    <UserControl.Resources>
+        <conv:HexToBrushConverter x:Key="HexToBrush"/>
+    </UserControl.Resources>
+
+    <Border Padding="24,16,24,20" Width="520">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#F1F5F9" Offset="0"/>
+                <GradientStop Color="#E6FFFA" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+        <StackPanel>
+            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+                <StackPanel>
+                    <TextBlock Text="节点连接"
+                               FontSize="22"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock Text="选择节点后连接；连接中不可修改节点。macOS MVP 仅支持全局模式。"
+                               FontSize="13"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Top"
+                            Margin="12,4,0,0"
+                            Spacing="8">
+                    <Button Content="返回登录"
+                            Classes="secondary"
+                            Command="{Binding LogoutCommand}"
+                            ToolTip.Tip="返回登录页（保留已保存的账号密码）"/>
+                    <Button Content="日志"
+                            Classes="secondary"
+                            Command="{Binding ShowLogsCommand}"
+                            ToolTip.Tip="查看本次启动后的日志"/>
+                </StackPanel>
+            </Grid>
+
+            <Border Classes="card">
+                <StackPanel>
+                    <StackPanel IsVisible="{Binding ShowNodePicker}">
+                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,12">
+                            <TextBlock Text="节点"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,12,0"/>
+                            <ComboBox Grid.Column="1"
+                                      ItemsSource="{Binding GatewayNodes}"
+                                      SelectedItem="{Binding SelectedGateway}"
+                                      IsEnabled="{Binding ControlsEditable}"
+                                      HorizontalAlignment="Stretch"
+                                      MinHeight="36">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Name}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <Button Grid.Column="2"
+                                    Content="刷新"
+                                    Classes="secondary"
+                                    Margin="8,0,0,0"
+                                    Command="{Binding LoadGatewayNodesCommand}"
+                                    ToolTip.Tip="重新下载节点列表"/>
+                        </Grid>
+
+                        <TextBlock Text="{Binding ProfileStatusMessage}"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12"/>
+
+                        <CheckBox Content="智能分流（国内直连，其它走 VPN）"
+                                  IsChecked="{Binding SplitTunnelEnabled}"
+                                  IsEnabled="{Binding SplitTunnelEditable}"
+                                  IsVisible="{Binding ShowSplitTunnelOption}"
+                                  Margin="0,0,0,12"/>
+                    </StackPanel>
+
+                    <Border IsVisible="{Binding ShowActiveConnection}"
+                            Background="#F0FDFA"
+                            BorderBrush="#99F6E4"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="14"
+                            Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock Text="当前连接"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Margin="0,0,0,10"/>
+                            <Grid ColumnDefinitions="56,*" Margin="0,0,0,8">
+                                <TextBlock Text="节点"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding ActiveNodeName}"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="56,*" Margin="0,0,0,8">
+                                <TextBlock Text="模式"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center"/>
+                                <Border Grid.Column="1"
+                                        Background="#CCFBF1"
+                                        CornerRadius="999"
+                                        Padding="10,4"
+                                        HorizontalAlignment="Left">
+                                    <TextBlock Text="{Binding ActiveSplitLabel}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource PrimaryBrush}"/>
+                                </Border>
+                            </Grid>
+                            <Grid ColumnDefinitions="56,*" Margin="0,0,0,4">
+                                <TextBlock Text="时长"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding ConnectionDuration}"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12" Spacing="10">
+                        <Ellipse Width="10" Height="10" VerticalAlignment="Center"
+                                 Fill="{Binding StatusIndicatorColor, Converter={StaticResource HexToBrush}}"/>
+                        <TextBlock Text="{Binding StatusMessage}"
+                                   FontSize="14"
+                                   VerticalAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                    </StackPanel>
+
+                    <Button Content="{Binding ConnectionActionText}"
+                            Classes="primary"
+                            Command="{Binding ToggleConnectionCommand}"
+                            MinWidth="140"
+                            HorizontalAlignment="Left"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </Border>
+</UserControl>

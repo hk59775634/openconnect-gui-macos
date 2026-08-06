@@ -1,0 +1,100 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:SslVpnClient.ViewModels"
+             xmlns:conv="using:SslVpnClient.Mac.Converters"
+             x:Class="SslVpnClient.Mac.Views.LoginView"
+             x:DataType="vm:ConnectionSetupViewModel">
+
+    <UserControl.Resources>
+        <conv:InverseBoolConverter x:Key="InverseBool"/>
+    </UserControl.Resources>
+
+    <Border Padding="24,16,24,20" Width="520">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#F1F5F9" Offset="0"/>
+                <GradientStop Color="#E6FFFA" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+        <StackPanel>
+            <TextBlock Text="登录"
+                       FontSize="22"
+                       FontWeight="SemiBold"
+                       Foreground="{StaticResource TextPrimaryBrush}"
+                       Margin="0,0,0,4"/>
+            <TextBlock Text="账号与密码保存在本机，下次启动可自动进入节点页。"
+                       FontSize="13"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       Margin="0,0,0,14"/>
+
+            <Border Classes="card">
+                <StackPanel>
+                    <TextBlock Text="服务器地址"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,0,0,6"/>
+                    <TextBox Classes="compact"
+                             Text="{Binding ServerUrl}"
+                             IsEnabled="{Binding !IsBusy}"
+                             Watermark="https://node.example.com"
+                             Margin="0,0,0,12"
+                             LostFocus="ServerUrl_LostFocus"
+                             KeyDown="LoginField_KeyDown"/>
+
+                    <TextBlock Text="账号"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,0,0,6"/>
+                    <TextBox Classes="compact"
+                             Text="{Binding Username}"
+                             IsEnabled="{Binding !IsBusy}"
+                             Margin="0,0,0,12"
+                             KeyDown="LoginField_KeyDown"/>
+
+                    <TextBlock Text="密码"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,0,0,6"/>
+                    <Grid Margin="0,0,0,4" ColumnDefinitions="*,Auto">
+                        <TextBox Classes="compact"
+                                 Grid.Column="0"
+                                 Text="{Binding Password}"
+                                 PasswordChar="•"
+                                 IsEnabled="{Binding !IsBusy}"
+                                 IsVisible="{Binding !IsPasswordVisible}"
+                                 KeyDown="LoginField_KeyDown"/>
+                        <TextBox Classes="compact"
+                                 Grid.Column="0"
+                                 Text="{Binding Password}"
+                                 IsEnabled="{Binding !IsBusy}"
+                                 IsVisible="{Binding IsPasswordVisible}"
+                                 KeyDown="LoginField_KeyDown"/>
+                        <Button Grid.Column="1"
+                                Classes="ghost"
+                                Margin="4,0,0,0"
+                                Content="显示"
+                                Command="{Binding TogglePasswordVisibilityCommand}"
+                                IsEnabled="{Binding !IsBusy}"
+                                ToolTip.Tip="显示/隐藏密码"/>
+                    </Grid>
+
+                    <Button Content="登录"
+                            Classes="primary"
+                            Command="{Binding LoginCommand}"
+                            IsEnabled="{Binding !IsBusy}"
+                            HorizontalAlignment="Stretch"
+                            Margin="0,14,0,0"/>
+
+                    <TextBlock Text="{Binding StatusMessage}"
+                               Foreground="{StaticResource PrimaryBrush}"
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               Margin="0,10,0,0"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </Border>
+</UserControl>

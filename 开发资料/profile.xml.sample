@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AnyConnectProfile xmlns="http://schemas.xmlsoap.org/encoding/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://schemas.xmlsoap.org/encoding/ AnyConnectProfile.xsd">
+
+	<ClientInitialization>
+		<UseStartBeforeLogon UserControllable="false">false</UseStartBeforeLogon>
+		<StrictCertificateTrust>false</StrictCertificateTrust>
+		<RestrictPreferenceCaching>false</RestrictPreferenceCaching>
+		<RestrictTunnelProtocols>IPSec</RestrictTunnelProtocols>
+		<BypassDownloader>true</BypassDownloader>
+		<WindowsVPNEstablishment>AllowRemoteUsers</WindowsVPNEstablishment>
+		<LocalLanAccess UserControllable="true">true</LocalLanAccess>
+		<DisableCaptivePortalDetection UserControllable="true">true</DisableCaptivePortalDetection>
+		<CertEnrollmentPin>pinAllowed</CertEnrollmentPin>
+		<CertificateMatch>
+			<KeyUsage>
+				<MatchKey>Digital_Signature</MatchKey>
+			</KeyUsage>
+			<ExtendedKeyUsage>
+				<ExtendedMatchKey>ClientAuth</ExtendedMatchKey>
+			</ExtendedKeyUsage>
+		</CertificateMatch>
+
+		<BackupServerList>
+			<HostAddress>https://vpn.example.com/backup</HostAddress>
+		</BackupServerList>
+	</ClientInitialization>
+
+	<ServerList>
+		<HostEntry>
+			<HostName>香港专线</HostName>
+			<HostAddress>https://gw.example.com:10000/hkg</HostAddress>
+		</HostEntry>
+		<HostEntry>
+			<HostName>台湾专线</HostName>
+			<HostAddress>https://gw.example.com:10000/twg</HostAddress>
+		</HostEntry>
+		<HostEntry>
+			<HostName>日本专线</HostName>
+			<HostAddress>https://gw.example.com:10000/jpg</HostAddress>
+		</HostEntry>
+		<HostEntry>
+			<HostName>新加坡专线</HostName>
+			<HostAddress>https://gw.example.com:10000/sgg</HostAddress>
+		</HostEntry>
+		<HostEntry>
+			<HostName>美国专线</HostName>
+			<HostAddress>https://us.gw.example.com:10000</HostAddress>
+		</HostEntry>
+	</ServerList>
+</AnyConnectProfile>

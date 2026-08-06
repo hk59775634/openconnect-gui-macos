@@ -1,0 +1,46 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SslVpnClient.ViewModels"
+        x:Class="SslVpnClient.Mac.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Icon="/Assets/app-icon.png"
+        Title="{Binding WindowTitle}"
+        Width="560"
+        SizeToContent="Height"
+        MinWidth="480"
+        MinHeight="360"
+        CanResize="False"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BackgroundBrush}">
+
+    <Grid RowDefinitions="Auto,*">
+        <Border Grid.Row="0"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="20,12">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="12">
+                <Border Width="10" Height="10"
+                        CornerRadius="5"
+                        Background="{StaticResource PrimaryBrush}"
+                        VerticalAlignment="Center"/>
+                <TextBlock Text="OpenConnect Gui"
+                           FontSize="17"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                <TextBlock Text="{Binding ConnectionDuration}"
+                           IsVisible="{Binding ShowConnectionDuration}"
+                           FontSize="13"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Margin="8,0,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <ContentControl Grid.Row="1"
+                        Content="{Binding CurrentPage}"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Top"/>
+    </Grid>
+</Window>

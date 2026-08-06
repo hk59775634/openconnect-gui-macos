@@ -1,0 +1,38 @@
+## Ignore build outputs
+**/bin/
+**/obj/
+**/out/
+**/publish/
+**/dist/
+**/release-artifacts/
+
+## IDE / OS
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+## Local secrets / runtime data
+**/connection-config.json
+**/gateway-nodes-cache.json
+**/ConnectTrace*.log
+**/*.pfx
+
+## Native build temp (ASCII staging)
+C:/temp/sslvpn-build/
+
+## Backups
+*-backup-*/
+
+## Test / local
+*.log
+TestResults/
+
+## Local scratch / packaging
+artifacts/
+dist/
+vendor/

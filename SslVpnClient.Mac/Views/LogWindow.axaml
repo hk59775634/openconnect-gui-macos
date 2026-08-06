@@ -1,0 +1,53 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:svc="using:SslVpnClient.Services"
+        x:Class="SslVpnClient.Mac.Views.LogWindow"
+        x:DataType="svc:SessionLogService"
+        Title="会话日志"
+        Width="640" Height="480"
+        MinWidth="480" MinHeight="320"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BackgroundBrush}">
+
+    <Grid Margin="20" RowDefinitions="Auto,*,Auto">
+        <TextBlock Grid.Row="0"
+                   Text="本次启动后的日志（退出应用后自动清空）"
+                   FontSize="13"
+                   FontWeight="SemiBold"
+                   Foreground="{StaticResource TextSecondaryBrush}"
+                   Margin="0,0,0,12"/>
+
+        <Border Grid.Row="1"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="10"
+                Padding="8">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto">
+                <TextBox Text="{Binding Text, Mode=OneWay}"
+                         IsReadOnly="True"
+                         FontFamily="Menlo, Monaco, Courier New"
+                         FontSize="12"
+                         TextWrapping="Wrap"
+                         AcceptsReturn="True"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Padding="4"/>
+            </ScrollViewer>
+        </Border>
+
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,14,0,0"
+                    Spacing="8">
+            <Button Content="复制全部"
+                    Classes="secondary"
+                    Click="Copy_Click"/>
+            <Button Content="关闭"
+                    Classes="primary"
+                    Click="Close_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>
