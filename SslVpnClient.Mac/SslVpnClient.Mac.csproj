@@ -25,6 +25,21 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       <Link>Native\ocg-vpnc-script.sh</Link>
     </Content>
+    <Content Include="Native\vpnc-script" Condition="Exists('Native\vpnc-script')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <Link>Native\vpnc-script</Link>
+    </Content>
+    <Content Include="Native\*.dylib" Condition="Exists('Native\libopenconnect.dylib') Or Exists('Native\oc_progress_bridge.dylib')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <Link>Native\%(Filename)%(Extension)</Link>
+    </Content>
+    <Content Include="Native\lib\**\*" Condition="Exists('Native\lib')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <Link>Native\lib\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

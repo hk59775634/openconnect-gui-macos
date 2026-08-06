@@ -1,12 +1,14 @@
 #!/bin/bash
 # OpenConnect Gui privileged runner → /Library/OpenConnectGui/oc-run
-# v8: connect snapshot must not abort on networksetup pipefail
+# v13: Avalonia-free vpnhost + OCG_VPN_WORKER；purge-routes 清理残留
 set -eu
 # 不用 pipefail：networksetup/scutil 管道失败不应中断 connect
 
-HELPER_VERSION=8
+HELPER_VERSION=13
 INSTALL_DIR="/Library/OpenConnectGui"
 OCG_VPNC="$INSTALL_DIR/ocg-vpnc-script"
+STOCK_VPNC="$INSTALL_DIR/vpnc-script"
+VPN_HOST="$INSTALL_DIR/ocg-vpnhost"
 
 OPENCONNECT_CANDIDATES=(
   /opt/homebrew/bin/openconnect
@@ -75,11 +77,17 @@ clear_one_utun_scutil() {
 }
 
 clear_all_utun_scutil() {
+  # 默认只清本次 tundev，避免误伤系统/其它 VPN 的 utun（会导致关 App 断网）
   local tundev="${1:-}" u
-  [[ -n "$tundev" ]] && clear_one_utun_scutil "$tundev"
+  if [[ -n "$tundev" ]]; then
+    clear_one_utun_scutil "$tundev"
+    return 0
+  fi
+  if [[ "${OCG_CLEAR_ALL_UTUN:-0}" != "1" ]]; then
+    return 0
+  fi
   for u in utun0 utun1 utun2 utun3 utun4 utun5 utun6 utun7 utun8 utun9 \
            utun10 utun11 utun12 utun13 utun14 utun15 utun16 utun17 utun18 utun19 utun20; do
-    [[ -n "$tundev" && "$u" == "$tundev" ]] && continue
     clear_one_utun_scutil "$u"
   done
 }
@@ -207,13 +215,16 @@ restore_network_state() {
     fi
   fi
 
-  clear_vpn_half_routes
-  if [[ -n "$gw" ]]; then
-    local ifc_now
-    ifc_now="$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}' || true)"
-    if [[ "$ifc_now" == utun* ]] || [[ -z "$ifc_now" ]]; then
-      route -n add default "$gw" 2>/dev/null || \
-        route -n change default "$gw" 2>/dev/null || true
+  # 仅在确实建过隧道时动路由，避免「仅 prepare / 连接失败」时误伤默认路由
+  if [[ -n "$tundev" ]]; then
+    clear_vpn_half_routes
+    if [[ -n "$gw" ]]; then
+      local ifc_now
+      ifc_now="$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}' || true)"
+      if [[ "$ifc_now" == utun* ]] || [[ -z "$ifc_now" ]]; then
+        route -n add default "$gw" 2>/dev/null || \
+          route -n change default "$gw" 2>/dev/null || true
+      fi
     fi
   fi
 
@@ -239,6 +250,69 @@ case "$cmd" in
     ;;
   ping)
     echo "ok"
+    exit 0
+    ;;
+  prepare)
+    # libopenconnect：连接前备份物理网关/DNS
+    session="${2:-}"
+    if [[ -z "$session" || ! -d "$session" ]]; then
+      fail "" "missing session dir"
+    fi
+    case "$session" in
+      /tmp/ocg-*|/private/tmp/ocg-*) ;;
+      *) fail "$session" "refusing session path: $session" ;;
+    esac
+    phys="$(capture_phys)" || fail "$session" "cannot detect physical default gateway"
+    OCG_PHYS_GW="$(echo "$phys" | awk '{print $1}')"
+    OCG_PHYS_IF="$(echo "$phys" | awk '{print $2}')"
+    OCG_NETWORK_SERVICE="$(network_service_for_if "$OCG_PHYS_IF" || true)"
+    echo "$OCG_PHYS_GW" > "$session/phys-gw.txt"
+    echo "$OCG_PHYS_IF" > "$session/phys-if.txt"
+    echo "$OCG_NETWORK_SERVICE" > "$session/network-service.txt"
+    chmod 644 "$session/phys-gw.txt" "$session/phys-if.txt" "$session/network-service.txt" 2>/dev/null || true
+    backup_network_state "$session" || true
+    echo "prepared gw=$OCG_PHYS_GW if=$OCG_PHYS_IF"
+    exit 0
+    ;;
+  restore)
+    session="${2:-}"
+    # 无 session / 未真正改过网络时，禁止做破坏性清理
+    if [[ -z "$session" || ! -d "$session" ]]; then
+      echo "restore skipped: no session"
+      exit 0
+    fi
+    if [[ ! -f "$session/tundev.txt" && ! -d "$session/net-backup" ]]; then
+      echo "restore skipped: network not touched"
+      exit 0
+    fi
+    # 仅当确实创建过隧道或写过半程路由时，才清 half-defaults
+    restore_network_state "$session"
+    if [[ -n "$session" && -f "$session/vpngateway.txt" ]]; then
+      route -n delete -host "$(cat "$session/vpngateway.txt")" 2>/dev/null || true
+    fi
+    if [[ -f "$session/tundev.txt" || -f "$session/routes.list" ]]; then
+      clear_vpn_half_routes
+    fi
+    tundev=""
+    [[ -f "$session/tundev.txt" ]] && tundev="$(cat "$session/tundev.txt")"
+    clear_all_utun_scutil "$tundev"
+    (
+      if [[ -f "$session/chnroutes.path" ]]; then
+        chn_file="$(cat "$session/chnroutes.path" 2>/dev/null || true)"
+        if [[ -n "$chn_file" && -f "$chn_file" ]]; then
+          ncpu="$(sysctl -n hw.logicalcpu 2>/dev/null || echo 8)"
+          [[ "$ncpu" -gt 16 ]] && ncpu=16
+          grep -vE '^[[:space:]]*(#|$)' "$chn_file" | \
+            awk '{
+              gsub(/[[:space:]]/, "", $1)
+              if ($1 ~ /^[0-9]+(\.[0-9]+){3}\/[0-9]+$/) print $1
+            }' | \
+            xargs -P "$ncpu" -n 1 -I{} \
+              route -n delete -net {} 2>/dev/null || true
+        fi
+      fi
+    ) >/dev/null 2>&1 &
+    echo "restored"
     exit 0
     ;;
   disconnect)
@@ -270,6 +344,81 @@ case "$cmd" in
       fi
     ) >/dev/null 2>&1 &
     echo "disconnected"
+    exit 0
+    ;;
+  lib-connect)
+    # root 下启动内置 libopenconnect worker（解决 utun Operation not permitted）
+    session="${2:-}"
+    if [[ -z "$session" || ! -d "$session" ]]; then
+      fail "" "missing session dir"
+    fi
+    case "$session" in
+      /tmp/ocg-*|/private/tmp/ocg-*) ;;
+      *) fail "$session" "refusing session path: $session" ;;
+    esac
+    [[ -x "$VPN_HOST" ]] || fail "$session" "missing ocg-vpnhost (reinstall helper)"
+    log="$session/openconnect.log"
+    pidf="$session/openconnect.pid"
+    : > "$log"
+    chmod 644 "$log" 2>/dev/null || true
+    rm -f "$session/connected.flag" "$session/stop.flag" "$session/helper.err"
+    export DYLD_LIBRARY_PATH="$INSTALL_DIR/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+    export OCG_VPN_WORKER=1
+    export OCG_VPN_SESSION="$session"
+    # 已是 root（经 sudo oc-run），子进程继承 root → 可创建 utun
+    nohup "$VPN_HOST" "$session" >> "$log" 2>&1 &
+    echo $! > "$pidf"
+    chmod 644 "$pidf" 2>/dev/null || true
+    # 短暂确认：若立刻退出且无 connected.flag，把日志尾写入 helper.err
+    sleep 0.4
+    if ! kill -0 "$(cat "$pidf")" 2>/dev/null; then
+      tail -30 "$log" > "$session/helper.err" 2>/dev/null || true
+      chmod 644 "$session/helper.err" 2>/dev/null || true
+      fail "$session" "worker exited immediately — see helper.err / openconnect.log"
+    fi
+    disown 2>/dev/null || true
+    echo "lib-connect started $(cat "$pidf")"
+    exit 0
+    ;;
+  purge-routes)
+    # 紧急清理：半程默认路由 + 可选 chnroutes 文件 + 常见 VPN 残留
+    session="${2:-}"
+    clear_vpn_half_routes
+    for u in utun0 utun1 utun2 utun3 utun4 utun5 utun6 utun7 utun8 utun9 \
+             utun10 utun11 utun12 utun13 utun14 utun15 utun16 utun17 utun18 utun19 utun20; do
+      route -n delete default -interface "$u" 2>/dev/null || true
+    done
+    if [[ -n "$session" && -f "$session/chnroutes.path" ]]; then
+      chn_file="$(cat "$session/chnroutes.path" 2>/dev/null || true)"
+    elif [[ -n "$session" && -f "$session/chnroutes-v4" ]]; then
+      chn_file="$session/chnroutes-v4"
+    else
+      chn_file=""
+    fi
+    if [[ -n "$chn_file" && -f "$chn_file" ]]; then
+      ncpu="$(sysctl -n hw.logicalcpu 2>/dev/null || echo 8)"
+      [[ "$ncpu" -gt 16 ]] && ncpu=16
+      grep -vE '^[[:space:]]*(#|$)' "$chn_file" | \
+        awk '{
+          gsub(/[[:space:]]/, "", $1)
+          if ($1 ~ /^[0-9]+(\.[0-9]+){3}\/[0-9]+$/) print $1
+        }' | \
+        xargs -P "$ncpu" -n 1 -I{} \
+          route -n delete -net {} 2>/dev/null || true
+    fi
+    if [[ -n "$session" && -f "$session/vpngateway.txt" ]]; then
+      route -n delete -host "$(cat "$session/vpngateway.txt")" 2>/dev/null || true
+    fi
+    # 若默认路由丢失，尝试从 session 备份恢复
+    if [[ -n "$session" && -f "$session/phys-gw.txt" ]]; then
+      gw="$(tr -d '[:space:]' < "$session/phys-gw.txt" || true)"
+      ifc_now="$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}' || true)"
+      if [[ -n "$gw" ]] && { [[ -z "$ifc_now" ]] || [[ "$ifc_now" == utun* ]]; }; then
+        route -n add default "$gw" 2>/dev/null || route -n change default "$gw" 2>/dev/null || true
+      fi
+    fi
+    restore_network_state "$session"
+    echo "purged"
     exit 0
     ;;
   connect)
@@ -366,7 +515,7 @@ case "$cmd" in
     exit 0
     ;;
   *)
-    echo "usage: oc-run version|ping|connect <dir>|disconnect [pid] [session]" >&2
+    echo "usage: oc-run version|ping|prepare|restore|purge-routes|lib-connect|connect|disconnect …" >&2
     exit 1
     ;;
 esac

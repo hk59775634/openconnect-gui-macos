@@ -11,17 +11,38 @@ export DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}"
 export PATH="$DOTNET_ROOT:$PATH"
 
 RID="${1:-osx-arm64}"
-VERSION="${OCG_VERSION:-2.0.0}"
+VERSION="${OCG_VERSION:-2.1.0}"
 APP_NAME="OpenConnect Gui"
 BUNDLE_ID="com.openconnectgui.client"
 PUBLISH="$ROOT/dist/$RID"
+VPNHHOST_OUT="$ROOT/dist/vpnhost-$RID"
 STAGE="$ROOT/dist/dmg-stage-$RID"
 APP_DIR="$STAGE/${APP_NAME}.app"
 DMG_OUT="$ROOT/dist/OpenConnectGui-${VERSION}-macos-${RID#osx-}.dmg"
 ZIP_OUT="${DMG_OUT%.dmg}.zip"
 ICNS_SRC="$ROOT/SslVpnClient.Mac/Assets/AppIcon.icns"
 
-echo "==> 1/4 Publish self-contained $RID (multi-file, includes native dylibs)"
+echo "==> 0/5 Vendor libopenconnect for $RID"
+"$ROOT/scripts/vendor-macos-native.sh" "$RID"
+
+echo "==> 1/5 Publish Avalonia-free VpnHost ($RID)"
+rm -rf "$VPNHHOST_OUT"
+dotnet publish "$ROOT/SslVpnClient.Mac.VpnHost/SslVpnClient.Mac.VpnHost.csproj" \
+  -c Release \
+  -r "$RID" \
+  --self-contained true \
+  -p:PublishSingleFile=false \
+  -p:DebugType=None \
+  -p:DebugSymbols=false \
+  -p:NuGetAudit=false \
+  -o "$VPNHHOST_OUT"
+[[ -x "$VPNHHOST_OUT/ocg-vpnhost" || -f "$VPNHHOST_OUT/ocg-vpnhost" ]] || {
+  echo "missing $VPNHHOST_OUT/ocg-vpnhost" >&2
+  exit 1
+}
+chmod +x "$VPNHHOST_OUT/ocg-vpnhost"
+
+echo "==> 2/5 Publish self-contained GUI $RID (multi-file, includes native dylibs)"
 rm -rf "$PUBLISH"
 dotnet publish "$ROOT/SslVpnClient.Mac/SslVpnClient.Mac.csproj" \
   -c Release \
@@ -43,7 +64,7 @@ chmod +x "$BIN"
   exit 1
 }
 
-echo "==> 2/4 Build ${APP_NAME}.app"
+echo "==> 3/5 Build ${APP_NAME}.app"
 rm -rf "$STAGE"
 mkdir -p "$APP_DIR/Contents/MacOS" \
          "$APP_DIR/Contents/Resources/Native"
@@ -57,6 +78,13 @@ rsync -a --delete \
 
 chmod +x "$APP_DIR/Contents/MacOS/OpenConnectGui"
 
+# Bundle headless vpnhost next to GUI binary (helper install copies from here)
+rsync -a --delete \
+  --exclude '*.pdb' \
+  --exclude '*.dbg' \
+  "$VPNHHOST_OUT/" "$APP_DIR/Contents/MacOS/vpnhost/"
+chmod +x "$APP_DIR/Contents/MacOS/vpnhost/ocg-vpnhost"
+
 # Native helper scripts
 for f in oc-run.sh ocg-vpnc-script.sh; do
   src="$ROOT/SslVpnClient.Mac/Native/$f"
@@ -67,6 +95,11 @@ for f in oc-run.sh ocg-vpnc-script.sh; do
   cp "$src" "$APP_DIR/Contents/Resources/Native/$f"
   chmod 755 "$APP_DIR/Contents/MacOS/Native/$f" "$APP_DIR/Contents/Resources/Native/$f"
 done
+# stock vpnc-script (for helper install)
+if [[ -f "$ROOT/SslVpnClient.Mac/Native/vpnc-script" ]]; then
+  cp "$ROOT/SslVpnClient.Mac/Native/vpnc-script" "$APP_DIR/Contents/MacOS/Native/vpnc-script"
+  chmod 755 "$APP_DIR/Contents/MacOS/Native/vpnc-script"
+fi
 
 # App icon
 if [[ -f "$ICNS_SRC" ]]; then
@@ -148,13 +181,13 @@ OpenConnect Gui ${VERSION}（macOS）
 1. 将「${APP_NAME}」拖到 Applications（应用程序）
 2. 若提示无法打开：右键 → 打开，或：
      xattr -cr "/Applications/${APP_NAME}.app"
-3. 需安装 openconnect： brew install openconnect
+3. 已内置 libopenconnect，目标机无需 brew install openconnect
 4. 首次连接会提示输入一次 Mac 密码安装权限助手
 
 说明：配置目录 ~/Library/Application Support/OpenConnectGui/
 EOF
 
-echo "==> 3/4 Create zip + DMG"
+echo "==> 4/5 Create zip + DMG"
 rm -f "$ZIP_OUT" "$DMG_OUT"
 ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$ZIP_OUT"
 echo "ZIP: $ZIP_OUT ($(du -h "$ZIP_OUT" | awk '{print $1}'))"
@@ -194,7 +227,7 @@ chmod +x "$MAKE_DMG"
 # Try DMG; may fail in restricted environments
 bash "$MAKE_DMG" && echo "DMG ready" || echo "WARN: run $MAKE_DMG manually"
 
-echo "==> 4/4 Done"
+echo "==> 5/5 Done"
 ls -lh "$ZIP_OUT" "$DMG_OUT" 2>/dev/null || ls -lh "$ZIP_OUT"
 echo "App: $APP_DIR"
 echo "Open: open \"$(dirname "$DMG_OUT")\""

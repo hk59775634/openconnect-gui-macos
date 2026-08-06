@@ -36,3 +36,14 @@ TestResults/
 artifacts/
 dist/
 vendor/
+
+## Vendored native libs (regenerate via scripts/vendor-macos-native.sh)
+SslVpnClient.Mac/Native/*.dylib
+SslVpnClient.Mac/Native/lib/
+SslVpnClient.Mac/Native/vpnc-script
+SslVpnClient.Mac/Native/lib-host/
+
+# Editor / local
+.specstory/
+.vscode/
+.cursorindexingignore

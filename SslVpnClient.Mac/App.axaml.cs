@@ -22,6 +22,16 @@ public partial class App : Application
     {
         Services = ServiceCollectionExtensions.ConfigureServices();
         Services.GetRequiredService<SessionLogService>().Clear();
+        try
+        {
+            SslVpnClient.Mac.Native.NativeLibraryBootstrap.Initialize(
+                Services.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                    ?.CreateLogger("NativeLibraryBootstrap"));
+        }
+        catch
+        {
+            // 连接时再校验
+        }
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

@@ -1,9 +1,15 @@
 #!/bin/bash
-# OpenConnect Gui vpnc-script wrapper (helper v4).
-# 分流路由用「管道重定向」批量 add/delete：awk 生成命令 | sh，避免逐条 fork 的 bash 循环开销。
+# OpenConnect Gui vpnc-script wrapper (helper v9 / libopenconnect).
+# 非 root 时经 sudo -n -E 提权；优先使用内置 stock vpnc-script。
 set -euo pipefail
 
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+if [[ "${EUID:-0}" -ne 0 ]]; then
+  exec /usr/bin/sudo -n -E "$SELF" "$@"
+fi
+
 STOCK_CANDIDATES=(
+  /Library/OpenConnectGui/vpnc-script
   /opt/homebrew/etc/vpnc/vpnc-script
   /usr/local/etc/vpnc/vpnc-script
   /etc/vpnc/vpnc-script
@@ -29,9 +35,48 @@ PHYS_GW="${OCG_PHYS_GW:-}"
 PHYS_IF="${OCG_PHYS_IF:-}"
 SESSION="${OCG_SESSION_DIR:-}"
 
+# 从 session 文件回退（openconnect 会清掉父进程环境变量）
+if [[ -z "$SESSION" && -f "${0:-}" ]]; then
+  # 若直接被当成 wrap 同目录调用
+  _d="$(cd "$(dirname "$0")" && pwd)"
+  [[ -f "$_d/ocg.env" || -f "$_d/meta.env" ]] && SESSION="$_d"
+fi
+if [[ -n "$SESSION" && -f "$SESSION/ocg.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$SESSION/ocg.env"
+  set +a
+  SESSION="${OCG_SESSION_DIR:-$SESSION}"
+  SPLIT="${OCG_SPLIT:-$SPLIT}"
+  ROUTE_LIST="${OCG_ROUTE_LIST:-$ROUTE_LIST}"
+  CHNROUTES="${OCG_CHNROUTES:-$CHNROUTES}"
+  PHYS_GW="${OCG_PHYS_GW:-$PHYS_GW}"
+  PHYS_IF="${OCG_PHYS_IF:-$PHYS_IF}"
+fi
+if [[ -z "$SPLIT" || "$SPLIT" == "0" ]] && [[ -n "$SESSION" && -f "$SESSION/split.flag" ]]; then
+  SPLIT="$(tr -d '[:space:]' < "$SESSION/split.flag" || true)"
+fi
+if [[ -z "$PHYS_GW" && -n "$SESSION" && -f "$SESSION/phys-gw.txt" ]]; then
+  PHYS_GW="$(tr -d '[:space:]' < "$SESSION/phys-gw.txt" || true)"
+fi
+if [[ -z "$PHYS_IF" && -n "$SESSION" && -f "$SESSION/phys-if.txt" ]]; then
+  PHYS_IF="$(tr -d '[:space:]' < "$SESSION/phys-if.txt" || true)"
+fi
+if [[ -z "$CHNROUTES" && -n "$SESSION" && -f "$SESSION/chnroutes-v4" ]]; then
+  CHNROUTES="$SESSION/chnroutes-v4"
+fi
+if [[ -z "$ROUTE_LIST" && -n "$SESSION" ]]; then
+  ROUTE_LIST="$SESSION/routes.list"
+fi
+
 log() {
   echo "ocg-vpnc: $*" >&2
+  if [[ -n "${SESSION:-}" && -d "$SESSION" ]]; then
+    echo "[ocg-vpnc] $*" >> "$SESSION/openconnect.log" 2>/dev/null || true
+  fi
 }
+
+log "reason=$REASON split=$SPLIT session=${SESSION:-} phys_gw=${PHYS_GW:-} chn=${CHNROUTES:-}"
 
 record_session() {
   [[ -n "$SESSION" && -d "$SESSION" ]] || return 0
@@ -119,9 +164,18 @@ apply_split_routes() {
 
   : > "${ROUTE_LIST:-/dev/null}"
 
+  # stock 常写成「default via VPN 内网网关」，仅 -interface 删不掉
   route -n delete default -interface "$tundev" 2>/dev/null || true
+  route -n delete default 2>/dev/null || true
   route -n delete -net 0.0.0.0/1 -interface "$tundev" 2>/dev/null || true
   route -n delete -net 128.0.0.0/1 -interface "$tundev" 2>/dev/null || true
+  # 先恢复物理默认，再挂 half-defaults（外网走 VPN，国内走物理）
+  if route -n add default "$PHYS_GW" 2>/dev/null; then
+    log "phys default -> $PHYS_GW"
+  else
+    route -n change default "$PHYS_GW" 2>/dev/null || true
+    log "phys default change -> $PHYS_GW"
+  fi
 
   if route -n add -host "$vpngw" "$PHYS_GW" 2>/dev/null; then
     echo "host $vpngw" >> "${ROUTE_LIST:-/dev/null}"
