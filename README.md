@@ -44,7 +44,7 @@ dotnet run --project SslVpnClient.Mac -c Release
 ./scripts/package-macos-dmg.sh osx-x64   # Intel Mac
 ```
 
-DMG 产物：`dist/OpenConnectGui-2.1.1-macos-arm64.dmg`  
+DMG 产物：`dist/OpenConnectGui-2.1.2-macos-arm64.dmg`  
 （将 App 拖到 Applications；**无需**再装 openconnect）
 
 配置目录：`~/Library/Application Support/OpenConnectGui/`  

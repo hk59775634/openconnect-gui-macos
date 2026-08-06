@@ -56,6 +56,10 @@ public partial class App : Application
             mainWindow.Closing += (_, e) => tray.HandleMainWindowClosing(e);
 
             desktop.MainWindow = mainWindow;
+            // OnExplicitShutdown + 托盘时 Avalonia 不会自动弹出主窗口，必须显式 Show
+            mainWindow.Show();
+            mainWindow.Activate();
+
             desktop.ShutdownRequested += (_, _) =>
             {
                 mainVm.DisconnectOnExit();

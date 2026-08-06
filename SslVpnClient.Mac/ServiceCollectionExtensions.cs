@@ -33,6 +33,13 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(60);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("OpenConnectGui/2.0-macOS");
         });
+        services.AddHttpClient("PortalApi", client =>
+        {
+            client.BaseAddress = new Uri(PortalAccountService.DefaultBaseUrl.TrimEnd('/') + "/");
+            client.Timeout = TimeSpan.FromSeconds(30);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("OpenConnectGui/2.1-macOS");
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+        });
 
         services.AddSingleton<IPasswordProtector, AesPasswordProtector>();
         services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
@@ -41,6 +48,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<SessionLogService>();
         services.AddSingleton<XmlProfileParser>();
         services.AddSingleton<VpnProfileService>();
+        services.AddSingleton<PortalAccountService>();
         services.AddSingleton<ChnRoutesService>();
         services.AddSingleton<VpnConnectionTimerService>();
         services.AddSingleton<VpnTrafficMonitorService>();

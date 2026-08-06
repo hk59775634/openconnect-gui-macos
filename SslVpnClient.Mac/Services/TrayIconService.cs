@@ -55,8 +55,8 @@ public sealed class TrayIconService : IDisposable
         _mainViewModel = mainViewModel;
         _controlViewModel = controlViewModel;
 
-        // 关窗进托盘后主窗口不再可见；必须显式 Shutdown，否则无法靠「最后窗口关闭」退出，
-        // 且 macOS 下 Hide/Show 生命周期更稳定。
+        // 仅在「关窗进托盘」时需要显式退出；启动时仍用默认关闭行为的语义由 HandleMainWindowClosing 接管。
+        // 这里设 OnExplicitShutdown，避免 Hide 后进程被当成无窗口退出；启动 UI 由 App 显式 Show。
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -170,13 +170,15 @@ public sealed class TrayIconService : IDisposable
 
     private void OnApplicationActivated(object? sender, ActivatedEventArgs e)
     {
-        // Dock 图标点击（Reopen）或从后台回来时恢复窗口
+        // 启动阶段不要抢焦点；仅托盘隐藏后的 Dock 重开 / 回前台才唤回窗口
+        if (!_hiddenToTray)
+        {
+            return;
+        }
+
         if (e.Kind is ActivationKind.Reopen or ActivationKind.Background)
         {
-            if (_hiddenToTray || _mainWindow is { IsVisible: false })
-            {
-                ShowMainWindow();
-            }
+            ShowMainWindow();
         }
     }
 

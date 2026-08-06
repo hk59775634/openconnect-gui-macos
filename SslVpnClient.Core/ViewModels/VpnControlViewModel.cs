@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -17,6 +18,7 @@ public partial class VpnControlViewModel : ObservableObject
     private readonly ConfigurationService _configurationService;
     private readonly VpnProfileService _profileService;
     private readonly GatewayNodeCacheService _nodeCache;
+    private readonly PortalAccountService _portalAccount;
     private readonly IVpnConnection _vpnConnection;
     private readonly VpnConnectionTimerService _timerService;
     private readonly SessionLogService _sessionLog;
@@ -25,6 +27,10 @@ public partial class VpnControlViewModel : ObservableObject
     private readonly IUiDispatcher _dispatcher;
     private ConnectionConfig? _savedConfig;
     private bool _networkMayNeedRestore;
+    private int _portalUserId;
+    private string? _pendingOrderNo;
+    private PortalUserInfo? _portalUser;
+    private IReadOnlyList<PortalProduct> _allProducts = Array.Empty<PortalProduct>();
 
     [ObservableProperty]
     private ObservableCollection<GatewayNode> _gatewayNodes = new();
@@ -64,6 +70,60 @@ public partial class VpnControlViewModel : ObservableObject
 
     [ObservableProperty]
     private string _activeSplitLabel = string.Empty;
+
+    [ObservableProperty]
+    private string _accountUsername = "—";
+
+    [ObservableProperty]
+    private string _accountPackageName = "—";
+
+    [ObservableProperty]
+    private string _accountEndTimeText = "—";
+
+    [ObservableProperty]
+    private string _accountStatusText = "未加载";
+
+    [ObservableProperty]
+    private string _accountStatusColor = "#64748B";
+
+    [ObservableProperty]
+    private string _accountMessage = string.Empty;
+
+    [ObservableProperty]
+    private bool _isLoadingAccount;
+
+    [ObservableProperty]
+    private bool _isCreatingOrder;
+
+    [ObservableProperty]
+    private ObservableCollection<PortalProduct> _products = new();
+
+    [ObservableProperty]
+    private PortalProduct? _selectedProduct;
+
+    [ObservableProperty]
+    private bool _payWithAlipay = true;
+
+    [ObservableProperty]
+    private bool _canCheckOrder;
+
+    public bool PayWithPaypal
+    {
+        get => !PayWithAlipay;
+        set
+        {
+            if (value)
+            {
+                PayWithAlipay = false;
+            }
+            else if (!PayWithAlipay)
+            {
+                PayWithAlipay = true;
+            }
+
+            OnPropertyChanged();
+        }
+    }
 
     /// <summary>请求返回登录页（保留本地凭证）。</summary>
     public event Action? LogoutRequested;
@@ -115,6 +175,7 @@ public partial class VpnControlViewModel : ObservableObject
         ConfigurationService configurationService,
         VpnProfileService profileService,
         GatewayNodeCacheService nodeCache,
+        PortalAccountService portalAccount,
         IVpnConnection vpnConnection,
         VpnConnectionTimerService timerService,
         SessionLogService sessionLog,
@@ -125,6 +186,7 @@ public partial class VpnControlViewModel : ObservableObject
         _configurationService = configurationService;
         _profileService = profileService;
         _nodeCache = nodeCache;
+        _portalAccount = portalAccount;
         _vpnConnection = vpnConnection;
         _timerService = timerService;
         _sessionLog = sessionLog;
@@ -152,10 +214,15 @@ public partial class VpnControlViewModel : ObservableObject
             StatusMessage = "请先登录并保存账号密码";
             GatewayNodes.Clear();
             ProfileStatusMessage = "本地无完整凭证，请返回登录页";
+            AccountMessage = "本地无凭证，无法加载套餐信息";
             return;
         }
 
-        await LoadGatewayNodesAsync().ConfigureAwait(true);
+        AccountUsername = _savedConfig.Username;
+        // 账户与节点并行拉取
+        var accountTask = RefreshAccountAsync();
+        var nodesTask = LoadGatewayNodesAsync();
+        await Task.WhenAll(accountTask, nodesTask).ConfigureAwait(true);
     }
 
     [RelayCommand(CanExecute = nameof(CanRefreshNodes))]
@@ -308,6 +375,277 @@ public partial class VpnControlViewModel : ObservableObject
 
     [RelayCommand]
     private void ShowLogs() => OpenLogsRequested?.Invoke();
+
+    [RelayCommand(CanExecute = nameof(CanRefreshAccount))]
+    private async Task RefreshAccountAsync()
+    {
+        if (_savedConfig == null
+            || string.IsNullOrWhiteSpace(_savedConfig.Username)
+            || string.IsNullOrWhiteSpace(_savedConfig.Password))
+        {
+            _savedConfig = await _configurationService.LoadAsync().ConfigureAwait(true);
+        }
+
+        if (string.IsNullOrWhiteSpace(_savedConfig?.Username)
+            || string.IsNullOrWhiteSpace(_savedConfig.Password))
+        {
+            AccountMessage = "本地无账号密码";
+            return;
+        }
+
+        IsLoadingAccount = true;
+        AccountMessage = "正在加载账户…";
+        try
+        {
+            var productsTask = _portalAccount.GetProductsAsync();
+            var userTask = _portalAccount.GetUserInfoAsync(
+                _savedConfig.Username,
+                _savedConfig.Password);
+
+            await Task.WhenAll(productsTask, userTask).ConfigureAwait(true);
+
+            var products = await productsTask.ConfigureAwait(true);
+            var user = await userTask.ConfigureAwait(true);
+
+            _allProducts = products;
+            ApplyUser(user);
+            ApplyProductsFiltered();
+            var hint = PortalProductFilter.DescribeFilter(user);
+            AccountMessage = Products.Count == 0
+                ? hint + "（当前无可选套餐）"
+                : $"{hint}（可选 {Products.Count} 个）";
+            AddLog($"[Info] 账户套餐={AccountPackageName} 到期={AccountEndTimeText} 可选套餐={Products.Count}");
+        }
+        catch (PortalApiException ex)
+        {
+            _logger.LogWarning(ex, "门户账户接口失败");
+            AccountMessage = ex.Message;
+            AccountStatusText = "获取失败";
+            AccountStatusColor = "#DC2626";
+            AddLog($"[Warning] 账户信息: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "加载账户异常");
+            AccountMessage = "无法连接门户，请检查网络";
+            AccountStatusText = "网络错误";
+            AccountStatusColor = "#DC2626";
+            AddLog($"[Error] 账户信息: {ex.Message}");
+        }
+        finally
+        {
+            IsLoadingAccount = false;
+            RefreshAccountCommand.NotifyCanExecuteChanged();
+            CreateOrderCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private bool CanRefreshAccount() => !IsLoadingAccount && !IsCreatingOrder;
+
+    [RelayCommand(CanExecute = nameof(CanCreateOrder))]
+    private async Task CreateOrderAsync()
+    {
+        if (_portalUserId <= 0)
+        {
+            AccountMessage = "请先成功加载账户信息";
+            return;
+        }
+
+        if (SelectedProduct == null)
+        {
+            AccountMessage = "请选择要购买的套餐";
+            return;
+        }
+
+        IsCreatingOrder = true;
+        AccountMessage = "正在创建订单…";
+        try
+        {
+            var payType = PayWithAlipay ? PortalPayType.Alipay : PortalPayType.Paypal;
+            var order = await _portalAccount.CreateOrderAsync(
+                _portalUserId,
+                SelectedProduct.Id,
+                payType).ConfigureAwait(true);
+
+            if (string.IsNullOrWhiteSpace(order.PayUrl))
+            {
+                AccountMessage = "下单成功但未返回支付链接";
+                return;
+            }
+
+            _pendingOrderNo = order.OrderNo;
+            CanCheckOrder = !string.IsNullOrWhiteSpace(_pendingOrderNo);
+            CheckOrderStatusCommand.NotifyCanExecuteChanged();
+
+            OpenExternalUrl(order.PayUrl);
+            AccountMessage = $"已打开支付页（订单 {order.OrderNo}）。支付完成后点「查询支付」或「刷新账户」。";
+            AddLog($"[Info] 续费订单 {order.OrderNo} pay_type={(int)payType}");
+        }
+        catch (PortalApiException ex)
+        {
+            AccountMessage = ex.Message;
+            AddLog($"[Warning] 下单失败: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "下单异常");
+            AccountMessage = $"下单失败: {ex.Message}";
+            AddLog($"[Error] 下单失败: {ex.Message}");
+        }
+        finally
+        {
+            IsCreatingOrder = false;
+            RefreshAccountCommand.NotifyCanExecuteChanged();
+            CreateOrderCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private bool CanCreateOrder() =>
+        !IsLoadingAccount
+        && !IsCreatingOrder
+        && _portalUserId > 0
+        && SelectedProduct != null;
+
+    [RelayCommand(CanExecute = nameof(CanCheckOrderStatus))]
+    private async Task CheckOrderStatusAsync()
+    {
+        if (_portalUserId <= 0 || string.IsNullOrWhiteSpace(_pendingOrderNo))
+        {
+            AccountMessage = "没有待查询的订单";
+            return;
+        }
+
+        try
+        {
+            var paid = await _portalAccount
+                .IsOrderPaidAsync(_portalUserId, _pendingOrderNo)
+                .ConfigureAwait(true);
+            if (paid)
+            {
+                AccountMessage = "支付成功，正在刷新账户…";
+                AddLog($"[Info] 订单 {_pendingOrderNo} 已支付");
+                await RefreshAccountAsync().ConfigureAwait(true);
+            }
+            else
+            {
+                AccountMessage = $"订单 {_pendingOrderNo} 尚未支付完成，请稍后再查";
+            }
+        }
+        catch (Exception ex)
+        {
+            AccountMessage = $"查询失败: {ex.Message}";
+        }
+    }
+
+    private bool CanCheckOrderStatus() =>
+        CanCheckOrder && _portalUserId > 0 && !string.IsNullOrWhiteSpace(_pendingOrderNo);
+
+    private void ApplyProductsFiltered()
+    {
+        var keepId = SelectedProduct?.Id;
+        Products.Clear();
+
+        IEnumerable<PortalProduct> source = _allProducts;
+        if (_portalUser != null)
+        {
+            source = PortalProductFilter.FilterForUser(_allProducts, _portalUser);
+        }
+
+        foreach (var p in source)
+        {
+            Products.Add(p);
+        }
+
+        SelectedProduct = keepId is int id
+            ? Products.FirstOrDefault(p => p.Id == id) ?? Products.FirstOrDefault()
+            : Products.FirstOrDefault();
+        CreateOrderCommand.NotifyCanExecuteChanged();
+    }
+
+    private void ApplyUser(PortalUserInfo user)
+    {
+        _portalUser = user;
+        _portalUserId = user.Id;
+        AccountUsername = string.IsNullOrWhiteSpace(user.Username)
+            ? (_savedConfig?.Username ?? "—")
+            : user.Username;
+        AccountEndTimeText = user.EndTimeText;
+        AccountPackageName = ResolvePackageName(user);
+
+        if (user.IsExpired)
+        {
+            AccountStatusText = "已过期";
+            AccountStatusColor = "#DC2626";
+        }
+        else
+        {
+            AccountStatusText = "有效";
+            AccountStatusColor = "#059669";
+        }
+
+        CreateOrderCommand.NotifyCanExecuteChanged();
+    }
+
+    private string ResolvePackageName(PortalUserInfo user)
+    {
+        if (PortalProductFilter.IsProAccount(user))
+        {
+            var pro = _allProducts.FirstOrDefault(p => p.Id == PortalProductFilter.ProVipType)
+                      ?? Products.FirstOrDefault(p => p.Id == PortalProductFilter.ProVipType);
+            return pro?.Name ?? "威伯斯云 Pro";
+        }
+
+        var match = _allProducts.FirstOrDefault(p => p.Id == user.VipType);
+        if (match != null)
+        {
+            return match.Name;
+        }
+
+        return user.VipType switch
+        {
+            0 => "未开通",
+            1 => user.IsExpired ? "个人会员（已过期）" : "个人会员",
+            _ => $"套餐 #{user.VipType}"
+        };
+    }
+
+    private static void OpenExternalUrl(string url)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // macOS 回退
+            Process.Start("open", url);
+        }
+    }
+
+    partial void OnPayWithAlipayChanged(bool value) =>
+        OnPropertyChanged(nameof(PayWithPaypal));
+
+    partial void OnSelectedProductChanged(PortalProduct? value) =>
+        CreateOrderCommand.NotifyCanExecuteChanged();
+
+    partial void OnIsLoadingAccountChanged(bool value)
+    {
+        RefreshAccountCommand.NotifyCanExecuteChanged();
+        CreateOrderCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsCreatingOrderChanged(bool value)
+    {
+        RefreshAccountCommand.NotifyCanExecuteChanged();
+        CreateOrderCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnCanCheckOrderChanged(bool value) =>
+        CheckOrderStatusCommand.NotifyCanExecuteChanged();
 
     [RelayCommand(CanExecute = nameof(CanConnect))]
     private async Task ConnectAsync()
