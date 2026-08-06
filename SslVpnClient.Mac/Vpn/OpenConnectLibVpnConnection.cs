@@ -141,11 +141,14 @@ public sealed class OpenConnectLibVpnConnection : IVpnConnection
                 File.Copy(f, Path.Combine(hostAppSrc, Path.GetFileName(f)), overwrite: true);
             }
 
+            var rid = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
+                      == System.Runtime.InteropServices.Architecture.Arm64
+                ? "osx-arm64"
+                : "osx-x64";
             foreach (var dir in new[]
                      {
+                         Path.Combine(baseDir, "Native", "lib", rid),
                          Path.Combine(baseDir, "Native"),
-                         Path.Combine(baseDir, "Native", "lib", "osx-arm64"),
-                         Path.Combine(baseDir, "Native", "lib", "osx-x64"),
                      })
             {
                 if (!Directory.Exists(dir))
@@ -155,7 +158,14 @@ public sealed class OpenConnectLibVpnConnection : IVpnConnection
 
                 foreach (var f in Directory.GetFiles(dir, "*.dylib"))
                 {
-                    File.Copy(f, Path.Combine(libSrc, Path.GetFileName(f)), overwrite: true);
+                    // 扁平 Native/*.dylib 可能来自开发机构建污染；优先 rid 目录已先拷
+                    var dest = Path.Combine(libSrc, Path.GetFileName(f));
+                    if (File.Exists(dest) && dir.EndsWith(Path.Combine("Native"), StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    File.Copy(f, dest, overwrite: true);
                 }
 
                 var vpncInNative = Path.Combine(dir, "vpnc-script");

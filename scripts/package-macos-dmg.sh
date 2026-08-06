@@ -85,6 +85,17 @@ rsync -a --delete \
   "$VPNHHOST_OUT/" "$APP_DIR/Contents/MacOS/vpnhost/"
 chmod +x "$APP_DIR/Contents/MacOS/vpnhost/ocg-vpnhost"
 
+# Drop other-RID native trees (csproj copies whole Native/lib/**)
+OTHER_RID="osx-x64"
+[[ "$RID" == "osx-x64" ]] && OTHER_RID="osx-arm64"
+rm -rf "$APP_DIR/Contents/MacOS/Native/lib/$OTHER_RID"
+# Flat Native/*.dylib must match this RID (dev machine may have host-arch leftovers)
+if [[ -d "$ROOT/SslVpnClient.Mac/Native/lib/$RID" ]]; then
+  find "$APP_DIR/Contents/MacOS/Native" -maxdepth 1 -type f -name '*.dylib' -delete
+  find "$ROOT/SslVpnClient.Mac/Native/lib/$RID" -maxdepth 1 -type f -name '*.dylib' \
+    -exec cp -f {} "$APP_DIR/Contents/MacOS/Native/" \;
+fi
+
 # Native helper scripts
 for f in oc-run.sh ocg-vpnc-script.sh; do
   src="$ROOT/SslVpnClient.Mac/Native/$f"
