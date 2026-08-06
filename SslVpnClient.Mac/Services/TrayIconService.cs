@@ -1,10 +1,10 @@
 using System.ComponentModel;
-using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
 using SslVpnClient.Abstractions;
@@ -31,6 +31,8 @@ public sealed class TrayIconService : IDisposable
     private string _connectionDuration = "00:00:00";
     private string _statusMessage = "已断开";
     private bool _exiting;
+    private bool _hiddenToTray;
+    private IActivatableLifetime? _activatable;
 
     public bool MinimizeToTrayOnClose { get; set; } = true;
 
@@ -53,6 +55,20 @@ public sealed class TrayIconService : IDisposable
         _mainViewModel = mainViewModel;
         _controlViewModel = controlViewModel;
 
+        // 关窗进托盘后主窗口不再可见；必须显式 Shutdown，否则无法靠「最后窗口关闭」退出，
+        // 且 macOS 下 Hide/Show 生命周期更稳定。
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        }
+
+        if (Application.Current?.TryGetFeature<IActivatableLifetime>(out var activatable) == true)
+        {
+            _activatable = activatable;
+            _activatable.Activated += OnApplicationActivated;
+        }
+
+        // macOS NativeMenu：用 Click，不要依赖 ICommand（托盘回调线程/绑定更可靠）
         var menu = new NativeMenu();
         menu.Items.Add(CreateMenuItem("显示主窗口", ShowMainWindow));
         menu.Items.Add(CreateMenuItem("VPN 控制", () =>
@@ -61,22 +77,13 @@ public sealed class TrayIconService : IDisposable
             _mainViewModel?.NavigateToControl();
         }));
         menu.Items.Add(new NativeMenuItemSeparator());
-        menu.Items.Add(CreateMenuItem("连接", async () =>
+        menu.Items.Add(CreateMenuItem("连接", () =>
         {
             ShowMainWindow();
             _mainViewModel?.NavigateToControl();
-            if (_controlViewModel != null)
-            {
-                await _controlViewModel.ConnectCommand.ExecuteAsync(null);
-            }
+            _ = ConnectFromTrayAsync();
         }));
-        menu.Items.Add(CreateMenuItem("断开", async () =>
-        {
-            if (_controlViewModel != null)
-            {
-                await _controlViewModel.DisconnectCommand.ExecuteAsync(null);
-            }
-        }));
+        menu.Items.Add(CreateMenuItem("断开", () => _ = DisconnectFromTrayAsync()));
         menu.Items.Add(new NativeMenuItemSeparator());
         menu.Items.Add(CreateMenuItem("退出", ExitApplication));
 
@@ -97,30 +104,81 @@ public sealed class TrayIconService : IDisposable
     }
 
     /// <summary>
-    /// 处理主窗口关闭：已连接 → 隐藏到托盘；未连接 → 允许关闭并退出。
+    /// 处理主窗口关闭：已连接 → 隐藏到托盘；未连接 → 退出应用。
     /// </summary>
     public bool HandleMainWindowClosing(CancelEventArgs e)
     {
-        if (_exiting || !MinimizeToTrayOnClose || _mainWindow == null)
+        if (_exiting || _mainWindow == null)
         {
             return false;
         }
 
-        if (_vpnConnection.CurrentState != VpnConnectionState.Connected)
+        if (MinimizeToTrayOnClose
+            && _vpnConnection.CurrentState == VpnConnectionState.Connected)
         {
-            return false;
+            e.Cancel = true;
+            _hiddenToTray = true;
+            _mainWindow.Hide();
+            _activatable?.TryEnterBackground();
+            _logger.LogInformation("主窗口已隐藏到菜单栏托盘");
+            return true;
         }
 
+        // OnExplicitShutdown：未连接关窗也要主动退出
         e.Cancel = true;
-        _mainWindow.Hide();
+        ExitApplication();
         return true;
     }
 
-    private static NativeMenuItem CreateMenuItem(string header, Action action) =>
-        new(header) { Command = new RelayActionCommand(action) };
+    private static NativeMenuItem CreateMenuItem(string header, Action action)
+    {
+        var item = new NativeMenuItem(header);
+        item.Click += (_, _) =>
+        {
+            // 原生菜单回调可能不在 UI 线程
+            if (Dispatcher.UIThread.CheckAccess())
+            {
+                action();
+            }
+            else
+            {
+                Dispatcher.UIThread.Post(action);
+            }
+        };
+        return item;
+    }
 
-    private static NativeMenuItem CreateMenuItem(string header, Func<Task> action) =>
-        new(header) { Command = new RelayActionCommand(action) };
+    private async Task ConnectFromTrayAsync()
+    {
+        if (_controlViewModel == null)
+        {
+            return;
+        }
+
+        await _controlViewModel.ConnectCommand.ExecuteAsync(null);
+    }
+
+    private async Task DisconnectFromTrayAsync()
+    {
+        if (_controlViewModel == null)
+        {
+            return;
+        }
+
+        await _controlViewModel.DisconnectCommand.ExecuteAsync(null);
+    }
+
+    private void OnApplicationActivated(object? sender, ActivatedEventArgs e)
+    {
+        // Dock 图标点击（Reopen）或从后台回来时恢复窗口
+        if (e.Kind is ActivationKind.Reopen or ActivationKind.Background)
+        {
+            if (_hiddenToTray || _mainWindow is { IsVisible: false })
+            {
+                ShowMainWindow();
+            }
+        }
+    }
 
     private void OnDurationChanged(object? sender, string duration)
     {
@@ -164,19 +222,51 @@ public sealed class TrayIconService : IDisposable
 
     private void ShowMainWindow()
     {
-        if (_mainWindow == null)
+        void ShowCore()
         {
-            return;
+            if (_mainWindow == null)
+            {
+                return;
+            }
+
+            _activatable?.TryLeaveBackground();
+
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                desktop.MainWindow ??= _mainWindow;
+            }
+
+            _mainWindow.Show();
+            _mainWindow.WindowState = WindowState.Normal;
+            _mainWindow.Activate();
+
+            // macOS：强制提到前面（Activate 有时不够）
+            _mainWindow.Topmost = true;
+            _mainWindow.Topmost = false;
+
+            _hiddenToTray = false;
+            _logger.LogInformation("主窗口已从托盘恢复");
         }
 
-        _mainWindow.Show();
-        _mainWindow.WindowState = WindowState.Normal;
-        _mainWindow.Activate();
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            ShowCore();
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(ShowCore);
+        }
     }
 
     private void ExitApplication()
     {
+        if (_exiting)
+        {
+            return;
+        }
+
         _exiting = true;
+        _hiddenToTray = false;
         _mainViewModel?.DisconnectOnExit();
         if (_trayIcon != null)
         {
@@ -227,6 +317,11 @@ public sealed class TrayIconService : IDisposable
     {
         _vpnConnection.ConnectionStateChanged -= OnConnectionStateChanged;
         _timerService.DurationChanged -= OnDurationChanged;
+        if (_activatable != null)
+        {
+            _activatable.Activated -= OnApplicationActivated;
+            _activatable = null;
+        }
 
         if (_trayIcon != null)
         {
@@ -241,35 +336,5 @@ public sealed class TrayIconService : IDisposable
         }
 
         _iconCache.Clear();
-    }
-
-    private sealed class RelayActionCommand : ICommand
-    {
-        private readonly Action? _sync;
-        private readonly Func<Task>? _async;
-
-        public RelayActionCommand(Action sync) => _sync = sync;
-
-        public RelayActionCommand(Func<Task> async) => _async = async;
-
-        public bool CanExecute(object? parameter) => true;
-
-        public async void Execute(object? parameter)
-        {
-            if (_async != null)
-            {
-                await _async();
-            }
-            else
-            {
-                _sync?.Invoke();
-            }
-        }
-
-        public event EventHandler? CanExecuteChanged
-        {
-            add { }
-            remove { }
-        }
     }
 }
