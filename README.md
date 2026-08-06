@@ -31,7 +31,7 @@ dotnet run --project SslVpnClient.Mac -c Release
 | 登录 / 保存凭证 / profile.xml 节点 | ✅ |
 | 选节点连接 / 断开 | ✅ 全局 / 智能分流 |
 | 智能分流 / chnroutes | ✅ 国内直连，其它走 VPN |
-| 托盘 / 流量图 | ❌ 后续 |
+| 托盘 / 流量图 | ✅ 菜单栏托盘 + 实时上下行图 |
 
 ## 分发（目标机无需安装 .NET）
 

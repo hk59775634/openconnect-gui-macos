@@ -43,7 +43,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<VpnProfileService>();
         services.AddSingleton<ChnRoutesService>();
         services.AddSingleton<VpnConnectionTimerService>();
+        services.AddSingleton<VpnTrafficMonitorService>();
         services.AddSingleton<IVpnConnection, OpenConnectCliVpnConnection>();
+        services.AddSingleton<TrayIconService>();
 
         services.AddSingleton<ConnectionSetupViewModel>();
         services.AddSingleton<VpnControlViewModel>();

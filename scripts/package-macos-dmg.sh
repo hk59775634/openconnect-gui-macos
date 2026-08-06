@@ -117,18 +117,27 @@ fi
 xattr -cr "$APP_DIR" 2>/dev/null || true
 
 # Smoke-test: process must stay alive >1s (Skia load)
+# Skip when cross-arch (e.g. arm64 host packaging osx-x64) — Rosetta may be absent.
 echo "==> Smoke-test launch…"
-("$APP_DIR/Contents/MacOS/OpenConnectGui" >/tmp/ocg-smoke.out 2>/tmp/ocg-smoke.err &) 
-SPID=$!
-sleep 2
-if kill -0 "$SPID" 2>/dev/null; then
-  echo "OK: process running pid=$SPID"
-  kill "$SPID" 2>/dev/null || true
-  wait "$SPID" 2>/dev/null || true
+HOST_ARCH="$(uname -m)"
+NEED_ROSETTA=0
+if [[ "$RID" == "osx-x64" && "$HOST_ARCH" == "arm64" ]]; then NEED_ROSETTA=1; fi
+if [[ "$RID" == "osx-arm64" && "$HOST_ARCH" == "x86_64" ]]; then NEED_ROSETTA=1; fi
+if [[ "$NEED_ROSETTA" -eq 1 ]] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+  echo "SKIP: cannot run $RID binary on $HOST_ARCH (no Rosetta)"
 else
-  echo "FAIL: app exited immediately:" >&2
-  cat /tmp/ocg-smoke.err >&2 || true
-  exit 1
+  "$APP_DIR/Contents/MacOS/OpenConnectGui" >/tmp/ocg-smoke.out 2>/tmp/ocg-smoke.err &
+  SPID=$!
+  sleep 2
+  if kill -0 "$SPID" 2>/dev/null; then
+    echo "OK: process running pid=$SPID"
+    kill "$SPID" 2>/dev/null || true
+    wait "$SPID" 2>/dev/null || true
+  else
+    echo "FAIL: app exited immediately:" >&2
+    cat /tmp/ocg-smoke.err >&2 || true
+    exit 1
+  fi
 fi
 
 ln -s /Applications "$STAGE/Applications"
@@ -150,41 +159,40 @@ rm -f "$ZIP_OUT" "$DMG_OUT"
 ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$ZIP_OUT"
 echo "ZIP: $ZIP_OUT ($(du -h "$ZIP_OUT" | awk '{print $1}'))"
 
-# Write MAKE-DMG helper next to artifacts
-cat > "$(dirname "$DMG_OUT")/MAKE-DMG.sh" <<'MAKE'
+# Write MAKE-DMG helper next to artifacts (RID-specific)
+ARCH_SUFFIX="${RID#osx-}"
+MAKE_DMG="$(dirname "$DMG_OUT")/MAKE-DMG-${ARCH_SUFFIX}.sh"
+cat > "$MAKE_DMG" <<MAKE
 #!/bin/bash
 set -euo pipefail
-cd "$(dirname "$0")"
-STAGE="dmg-stage-osx-arm64"
+cd "\$(dirname "\$0")"
+STAGE="dmg-stage-${RID}"
 APP="OpenConnect Gui.app"
-DMG="OpenConnectGui-2.0.0-macos-arm64.dmg"
-TMP_DMG="OpenConnectGui-rw-temp.dmg"
+DMG="OpenConnectGui-${VERSION}-macos-${ARCH_SUFFIX}.dmg"
+TMP_DMG="OpenConnectGui-rw-temp-${ARCH_SUFFIX}.dmg"
 VOLNAME="OpenConnect Gui"
-[[ -d "$STAGE/$APP" ]] || { echo "missing $STAGE/$APP" >&2; exit 1; }
-for v in "/Volumes/${VOLNAME}" "/Volumes/${VOLNAME} 1"; do
-  [[ -d "$v" ]] && hdiutil detach "$v" -force 2>/dev/null || true
+[[ -d "\$STAGE/\$APP" ]] || { echo "missing \$STAGE/\$APP" >&2; exit 1; }
+for v in "/Volumes/\${VOLNAME}" "/Volumes/\${VOLNAME} 1"; do
+  [[ -d "\$v" ]] && hdiutil detach "\$v" -force 2>/dev/null || true
 done
-rm -f "$TMP_DMG" "$DMG"
-hdiutil create -ov -size 300m -fs HFS+ -volname "$VOLNAME" "$TMP_DMG"
-hdiutil attach -readwrite -noverify -noautoopen "$TMP_DMG" >/dev/null
-MOUNT="/Volumes/${VOLNAME}"
-for _ in $(seq 1 20); do [[ -d "$MOUNT" ]] && break; sleep 0.2; done
-ditto "$STAGE/$APP" "$MOUNT/$APP"
-ln -sf /Applications "$MOUNT/Applications"
-[[ -f "$STAGE/安装说明.txt" ]] && cp "$STAGE/安装说明.txt" "$MOUNT/安装说明.txt" || true
+rm -f "\$TMP_DMG" "\$DMG"
+hdiutil create -ov -size 300m -fs HFS+ -volname "\$VOLNAME" "\$TMP_DMG"
+hdiutil attach -readwrite -noverify -noautoopen "\$TMP_DMG" >/dev/null
+MOUNT="/Volumes/\${VOLNAME}"
+for _ in \$(seq 1 20); do [[ -d "\$MOUNT" ]] && break; sleep 0.2; done
+ditto "\$STAGE/\$APP" "\$MOUNT/\$APP"
+ln -sf /Applications "\$MOUNT/Applications"
+[[ -f "\$STAGE/安装说明.txt" ]] && cp "\$STAGE/安装说明.txt" "\$MOUNT/安装说明.txt" || true
 sync
-hdiutil detach "$MOUNT" -force
-hdiutil convert "$TMP_DMG" -format UDZO -imagekey zlib-level=9 -o "$DMG"
-rm -f "$TMP_DMG"
-ls -lh "$DMG"
-open .
+hdiutil detach "\$MOUNT" -force
+hdiutil convert "\$TMP_DMG" -format UDZO -imagekey zlib-level=9 -o "\$DMG"
+rm -f "\$TMP_DMG"
+ls -lh "\$DMG"
 MAKE
-chmod +x "$(dirname "$DMG_OUT")/MAKE-DMG.sh"
+chmod +x "$MAKE_DMG"
 
-if [[ "$RID" == "osx-arm64" ]]; then
-  # Try DMG; may fail in restricted environments
-  bash "$(dirname "$DMG_OUT")/MAKE-DMG.sh" && echo "DMG ready" || echo "WARN: run dist/MAKE-DMG.sh manually"
-fi
+# Try DMG; may fail in restricted environments
+bash "$MAKE_DMG" && echo "DMG ready" || echo "WARN: run $MAKE_DMG manually"
 
 echo "==> 4/4 Done"
 ls -lh "$ZIP_OUT" "$DMG_OUT" 2>/dev/null || ls -lh "$ZIP_OUT"

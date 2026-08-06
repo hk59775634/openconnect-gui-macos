@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
+using SslVpnClient.Mac.Services;
 using SslVpnClient.Mac.Views;
 using SslVpnClient.Services;
 using SslVpnClient.ViewModels;
@@ -26,6 +27,7 @@ public partial class App : Application
         {
             var mainVm = Services.GetRequiredService<MainViewModel>();
             var controlVm = Services.GetRequiredService<VpnControlViewModel>();
+            var tray = Services.GetRequiredService<TrayIconService>();
             var mainWindow = new MainWindow
             {
                 DataContext = mainVm
@@ -40,12 +42,16 @@ public partial class App : Application
                 logs.Show(mainWindow);
             };
 
+            tray.Initialize(mainWindow, mainVm, controlVm);
+            mainWindow.Closing += (_, e) => tray.HandleMainWindowClosing(e);
+
             desktop.MainWindow = mainWindow;
             desktop.ShutdownRequested += (_, _) =>
             {
                 mainVm.DisconnectOnExit();
                 try
                 {
+                    tray.Dispose();
                     Services.GetRequiredService<SessionLogService>().Clear();
                 }
                 catch

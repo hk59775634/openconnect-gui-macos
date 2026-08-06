@@ -20,6 +20,7 @@ public partial class VpnControlViewModel : ObservableObject
     private readonly IVpnConnection _vpnConnection;
     private readonly VpnConnectionTimerService _timerService;
     private readonly SessionLogService _sessionLog;
+    private readonly VpnTrafficMonitorService _trafficMonitor;
     private readonly ILogger<VpnControlViewModel> _logger;
     private readonly IUiDispatcher _dispatcher;
     private ConnectionConfig? _savedConfig;
@@ -70,6 +71,9 @@ public partial class VpnControlViewModel : ObservableObject
     /// <summary>请求打开会话日志窗口（由宿主 UI 处理）。</summary>
     public event Action? OpenLogsRequested;
 
+    /// <summary>流量监控服务（绑定图表）。</summary>
+    public VpnTrafficMonitorService Traffic => _trafficMonitor;
+
     /// <summary>未连接时可修改分流/节点。</summary>
     public bool ControlsEditable => !IsConnected && !IsConnecting;
 
@@ -114,6 +118,7 @@ public partial class VpnControlViewModel : ObservableObject
         IVpnConnection vpnConnection,
         VpnConnectionTimerService timerService,
         SessionLogService sessionLog,
+        VpnTrafficMonitorService trafficMonitor,
         ILogger<VpnControlViewModel> logger,
         IUiDispatcher dispatcher)
     {
@@ -123,6 +128,7 @@ public partial class VpnControlViewModel : ObservableObject
         _vpnConnection = vpnConnection;
         _timerService = timerService;
         _sessionLog = sessionLog;
+        _trafficMonitor = trafficMonitor;
         _logger = logger;
         _dispatcher = dispatcher;
 
@@ -401,6 +407,7 @@ public partial class VpnControlViewModel : ObservableObject
         finally
         {
             _timerService.Stop();
+            _trafficMonitor.Stop();
             ConnectionDuration = "00:00:00";
             _networkMayNeedRestore = false;
             IsConnected = false;
@@ -533,6 +540,13 @@ public partial class VpnControlViewModel : ObservableObject
                 IsConnecting = false;
                 _networkMayNeedRestore = true;
                 _timerService.Start();
+                var ifName = _vpnConnection.TunInterfaceName;
+                if (string.IsNullOrWhiteSpace(ifName))
+                {
+                    ifName = "utun";
+                }
+
+                _trafficMonitor.Start(ifName);
                 if (SelectedGateway != null)
                 {
                     ActiveNodeName = SelectedGateway.Name;
@@ -556,6 +570,7 @@ public partial class VpnControlViewModel : ObservableObject
                 IsConnected = false;
                 IsConnecting = false;
                 _timerService.Stop();
+                _trafficMonitor.Stop();
                 _networkMayNeedRestore = _vpnConnection.NeedsNetworkRestore;
                 DisconnectCommand.NotifyCanExecuteChanged();
                 ToggleConnectionCommand.NotifyCanExecuteChanged();

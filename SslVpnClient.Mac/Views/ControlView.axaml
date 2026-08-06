@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:SslVpnClient.ViewModels"
              xmlns:conv="using:SslVpnClient.Mac.Converters"
+             xmlns:controls="using:SslVpnClient.Mac.Controls"
              x:Class="SslVpnClient.Mac.Views.ControlView"
              x:DataType="vm:VpnControlViewModel">
 
@@ -23,7 +24,7 @@
                                FontSize="22"
                                FontWeight="SemiBold"
                                Foreground="{StaticResource TextPrimaryBrush}"/>
-                    <TextBlock Text="选择节点后连接；连接中不可修改节点。macOS MVP 仅支持全局模式。"
+                    <TextBlock Text="选择节点后连接；连接成功后关闭窗口将隐藏到菜单栏。"
                                FontSize="13"
                                Foreground="{StaticResource TextSecondaryBrush}"
                                TextWrapping="Wrap"/>
@@ -125,7 +126,7 @@
                                                Foreground="{StaticResource PrimaryBrush}"/>
                                 </Border>
                             </Grid>
-                            <Grid ColumnDefinitions="56,*" Margin="0,0,0,4">
+                            <Grid ColumnDefinitions="56,*" Margin="0,0,0,12">
                                 <TextBlock Text="时长"
                                            Foreground="{StaticResource TextSecondaryBrush}"
                                            VerticalAlignment="Center"/>
@@ -135,6 +136,33 @@
                                            FontWeight="SemiBold"
                                            Foreground="{StaticResource TextPrimaryBrush}"/>
                             </Grid>
+
+                            <TextBlock Text="本次连接流量"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Margin="0,0,0,6"/>
+                            <Grid ColumnDefinitions="*,*" Margin="0,0,0,4">
+                                <TextBlock Text="{Binding Traffic.DownloadRateText}"
+                                           FontSize="12"
+                                           Foreground="#0F766E"/>
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Traffic.UploadRateText}"
+                                           FontSize="12"
+                                           HorizontalAlignment="Right"
+                                           Foreground="#0369A1"/>
+                            </Grid>
+                            <controls:TrafficSparkline Height="48"
+                                                       Margin="0,0,0,4"
+                                                       Samples="{Binding Traffic.DownloadSamples}"
+                                                       Stroke="{StaticResource PrimaryBrush}"/>
+                            <controls:TrafficSparkline Height="36"
+                                                       Margin="0,0,0,6"
+                                                       Samples="{Binding Traffic.UploadSamples}"
+                                                       Stroke="#0369A1"/>
+                            <TextBlock Text="{Binding Traffic.TotalTrafficText}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource TextSecondaryBrush}"/>
                         </StackPanel>
                     </Border>
 
