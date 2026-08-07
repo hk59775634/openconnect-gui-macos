@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>OpenConnect Gui __VERSION__</title>
+    <organization>com.openconnectgui</organization>
+    <domains enable_localSystem="true"/>
+    <options customize="never" require-scripts="true" rootVolumeOnly="true"/>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <pkg-ref id="com.openconnectgui.client"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="com.openconnectgui.client"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="com.openconnectgui.client" visible="false">
+        <pkg-ref id="com.openconnectgui.client"/>
+    </choice>
+    <pkg-ref id="com.openconnectgui.client"
+             version="__VERSION__"
+             onConclusion="none">OpenConnectGui-component.pkg</pkg-ref>
+</installer-gui-script>

@@ -1,0 +1,67 @@
+#!/bin/bash
+# PKG postinstall — runs as root via Installer.app (user already authenticated).
+# Installs sudoers + final permissions for OpenConnect Gui helper.
+set -euo pipefail
+
+INSTALL_DIR="/Library/OpenConnectGui"
+HELPER="$INSTALL_DIR/oc-run"
+VPNC="$INSTALL_DIR/ocg-vpnc-script"
+STOCK="$INSTALL_DIR/vpnc-script"
+HOST_WRAP="$INSTALL_DIR/ocg-vpnhost"
+HOST_APP_DIR="$INSTALL_DIR/vpnhost"
+SUDOERS="/etc/sudoers.d/openconnect-gui"
+APP="/Applications/OpenConnect Gui.app"
+
+mkdir -p "$INSTALL_DIR/lib" "$HOST_APP_DIR"
+
+# Permissions on helper tree
+if [[ -d "$INSTALL_DIR" ]]; then
+  chown -R root:wheel "$INSTALL_DIR"
+  chmod 755 "$INSTALL_DIR"
+fi
+for f in "$HELPER" "$VPNC" "$STOCK" "$HOST_WRAP"; do
+  [[ -f "$f" ]] && chmod 755 "$f"
+done
+[[ -x "$HOST_APP_DIR/ocg-vpnhost" ]] && chmod 755 "$HOST_APP_DIR/ocg-vpnhost"
+chmod 755 "$INSTALL_DIR/lib"/*.dylib 2>/dev/null || true
+
+# Remove stale GUI host.env (legacy Avalonia-as-root path)
+rm -f "$INSTALL_DIR/host.env"
+
+# If an older relocatable pkg dropped the app into a build tree, pull it into /Applications
+if [[ ! -d "$APP" ]]; then
+  while IFS= read -r cand; do
+    [[ -z "$cand" || ! -d "$cand" ]] && continue
+    case "$cand" in
+      /Applications/*) continue ;;
+    esac
+    echo "Recovering relocated app from: $cand"
+    ditto "$cand" "$APP"
+    break
+  done < <(mdfind "kMDItemCFBundleIdentifier == 'com.openconnectgui.client'" 2>/dev/null || true)
+fi
+
+if [[ -d "$APP" ]]; then
+  chown -R root:wheel "$APP" 2>/dev/null || true
+  chmod 755 "$APP/Contents/MacOS/OpenConnectGui" 2>/dev/null || true
+  xattr -cr "$APP" 2>/dev/null || true
+else
+  echo "WARNING: $APP missing after install" >&2
+  logger -t OpenConnectGui "WARNING: app not in /Applications after install"
+fi
+
+# sudoers: NOPASSWD for helper + split script
+cat > "$SUDOERS" <<EOF
+# OpenConnect Gui — installed by PKG postinstall
+Defaults!$VPNC !env_reset,!secure_path
+ALL ALL=(root) NOPASSWD:SETENV: $VPNC
+ALL ALL=(root) NOPASSWD: $HELPER
+EOF
+chown root:wheel "$SUDOERS"
+chmod 440 "$SUDOERS"
+/usr/sbin/visudo -cf "$SUDOERS"
+
+xattr -cr "$INSTALL_DIR" 2>/dev/null || true
+
+logger -t OpenConnectGui "helper + app postinstall OK (app=$([[ -d $APP ]] && echo yes || echo no))"
+exit 0

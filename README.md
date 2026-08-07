@@ -38,14 +38,29 @@ dotnet run --project SslVpnClient.Mac -c Release
 
 ## 分发（目标机无需安装 .NET）
 
+### 推荐：安装包 PKG（安装时输入管理员密码）
+
+```bash
+./scripts/package-macos-pkg.sh           # Apple Silicon → .pkg + Installer.dmg
+./scripts/package-macos-pkg.sh osx-x64   # Intel
+```
+
+产物示例：
+
+- `dist/OpenConnectGui-2.2.0-macos-arm64.pkg` — 双击安装（装 App + VPN 权限助手）
+- `dist/OpenConnectGui-2.2.0-macos-arm64-Installer.dmg` — 内含上述 PKG
+
+签名 / 公证说明见 [docs/SIGNING.md](docs/SIGNING.md)。
+
+### 备选：拖拽 DMG
+
 ```bash
 ./scripts/publish-macos.sh          # 仅可执行文件
 ./scripts/package-macos-dmg.sh      # 打包 .app + DMG（默认 Apple Silicon）
 ./scripts/package-macos-dmg.sh osx-x64   # Intel Mac
 ```
 
-DMG 产物：`dist/OpenConnectGui-2.1.2-macos-arm64.dmg`  
-（将 App 拖到 Applications；**无需**再装 openconnect）
+拖拽安装后，**首次连接**仍可能提示一次管理员密码以安装权限助手。
 
 配置目录：`~/Library/Application Support/OpenConnectGui/`  
 连接日志：`~/Library/Application Support/OpenConnectGui/sessions/*/openconnect.log`

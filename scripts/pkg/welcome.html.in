@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Welcome</title></head>
+<body style="font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.45;">
+<h2>欢迎安装 OpenConnect Gui __VERSION__</h2>
+<p>本安装程序将：</p>
+<ul>
+  <li>安装 <b>OpenConnect Gui</b> 到「应用程序」</li>
+  <li>安装 VPN 权限助手到 <code>/Library/OpenConnectGui</code>（创建虚拟网卡 / 配置路由需要管理员权限）</li>
+</ul>
+<p>安装过程中系统会提示输入 <b>Mac 管理员密码</b>（与 Cisco AnyConnect 类似，仅此一次）。</p>
+<p>安装完成后即可打开应用并连接，无需再单独授权。</p>
+</body>
+</html>

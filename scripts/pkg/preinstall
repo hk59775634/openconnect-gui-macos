@@ -1,0 +1,13 @@
+#!/bin/bash
+# PKG preinstall — cleanup before upgrade
+set -euo pipefail
+
+INSTALL_DIR="/Library/OpenConnectGui"
+
+# Stop any leftover worker markers (best-effort)
+rm -f /tmp/ocg-*/stop.flag 2>/dev/null || true
+
+# Legacy junk
+rm -f "$INSTALL_DIR/host.env" 2>/dev/null || true
+
+exit 0
